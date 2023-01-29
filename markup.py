@@ -8,21 +8,24 @@ from callback_datas import NamesCallback, ProdsCallback
 # MainMenu = InlineKeyboardMarkup().insert(btnTransaction)
 
 MainMenu = InlineKeyboardMarkup(
-    row_width=1,
+    row_width=2,
     inline_keyboard=[
         [
             InlineKeyboardButton(text="Продажа", callback_data="btn:MainMenu:AddTransaction"),
-            InlineKeyboardButton(text="Закупка", callback_data="btn:MainMenu:AddProduct")
+            InlineKeyboardButton(text="Закупка", callback_data="btn:MainMenu:AddProduct"),
+            InlineKeyboardButton(text="Проданно", callback_data="btn:MainMenu:SmetaSold"),
+            InlineKeyboardButton(text="Комиссионные", callback_data="btn:MainMenu:SmetaCommis"),
         ]])
 
 btnCancel = InlineKeyboardButton(text="Отмена", callback_data="cancel")
 
 #---Title_pod---
 ProdMenu = InlineKeyboardMarkup(
+    row_width=1,
     inline_keyboard=[
         [
-            InlineKeyboardButton(text="Выбрать из списка", callback_data="btn:ProdMenu:Choice"),
-            InlineKeyboardButton(text="Добавить новый товар", callback_data="btn:ProdMenu:Add")
+            InlineKeyboardButton(text="Выбрать", callback_data="btn:ProdMenu:Choice"),
+            InlineKeyboardButton(text="Новый", callback_data="btn:ProdMenu:Add")
         ]])
 ProdMenu.insert(btnCancel)
 
@@ -44,8 +47,8 @@ def title1_markup(title_list):
     return ChoiсeTitle1Menu
 
 #---Name---
-btnChoiceName = InlineKeyboardButton(text='Выбрать из списка', callback_data="btn:NameMenu:Choice")
-btnAddName = InlineKeyboardButton(text='Добавить новое', callback_data="btn:NameMenu:Add")
+btnChoiceName = InlineKeyboardButton(text='Выбрать', callback_data="btn:NameMenu:Choice")
+btnAddName = InlineKeyboardButton(text='Новый', callback_data="btn:NameMenu:Add")
 NameMenu = InlineKeyboardMarkup(row_width=1).insert(btnAddName)
 NameMenu.insert(btnChoiceName)
 NameMenu.insert(btnCancel)
