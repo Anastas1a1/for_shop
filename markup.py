@@ -1,13 +1,47 @@
 #from xml.etree.ElementPath import _Callback
-from aiogram.types import ReplyKeyboardMarkup, KeyboardButton, InlineKeyboardButton, InlineKeyboardMarkup, ReplyKeyboardMarkup
-from callback_datas import NamesCallback
+from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
+from callback_datas import NamesCallback, ProdsCallback
 
 #---Main Menu---
 
-btnTransaction = InlineKeyboardButton(text="Добавить операцию", callback_data="btn:MainMenu:AddTransaction")
-MainMenu = InlineKeyboardMarkup().insert(btnTransaction)
+# btnTransaction = InlineKeyboardButton(text="Добавить операцию", callback_data="btn:MainMenu:AddTransaction")
+# MainMenu = InlineKeyboardMarkup().insert(btnTransaction)
+
+MainMenu = InlineKeyboardMarkup(
+    row_width=1,
+    inline_keyboard=[
+        [
+            InlineKeyboardButton(text="Продажа", callback_data="btn:MainMenu:AddTransaction"),
+            InlineKeyboardButton(text="Закупка", callback_data="btn:MainMenu:AddProduct")
+        ]])
 
 btnCancel = InlineKeyboardButton(text="Отмена", callback_data="cancel")
+
+#---Title_pod---
+ProdMenu = InlineKeyboardMarkup(
+    inline_keyboard=[
+        [
+            InlineKeyboardButton(text="Выбрать из списка", callback_data="btn:ProdMenu:Choice"),
+            InlineKeyboardButton(text="Добавить новый товар", callback_data="btn:ProdMenu:Add")
+        ]])
+ProdMenu.insert(btnCancel)
+
+def title1_markup(title_list): 
+    ChoiсeTitle1Menu = InlineKeyboardMarkup()
+    cnt = 2
+    for title in title_list:
+        ChoiсeTitle1Menu.insert(InlineKeyboardButton(
+            text=title,
+            callback_data=ProdsCallback.new(
+                space = "ChoiceTitle",
+                title = title,
+                row=cnt)
+        ))
+        if cnt == 8:
+            break
+        cnt+=1
+    ChoiсeTitle1Menu.insert(btnCancel)
+    return ChoiсeTitle1Menu
 
 #---Name---
 btnChoiceName = InlineKeyboardButton(text='Выбрать из списка', callback_data="btn:NameMenu:Choice")
@@ -35,9 +69,28 @@ def names_markup(names_list):
                 name = name,
                 row=cnt)
         ))
+        if cnt == 8:
+            break
         cnt+=1
     ChoiсeNameMenu.insert(btnCancel)
     return ChoiсeNameMenu
+
+
+def title_markup(title_list): 
+    ChoiсeTitleMenu = InlineKeyboardMarkup()
+    cnt = 2
+    for title in title_list:
+        ChoiсeTitleMenu.insert(InlineKeyboardButton(
+            text=title,
+            callback_data=ProdsCallback.new(
+                space = "ChoiceTitle_2",
+                title = title,
+                row=cnt)
+        ))
+        cnt+=1
+    ChoiсeTitleMenu.insert(btnCancel)
+    return ChoiсeTitleMenu
+
 
 
 
@@ -78,7 +131,6 @@ CurMenu = InlineKeyboardMarkup(
         [
             InlineKeyboardButton(text='RUB', callback_data="btn:Cur:RUB"),
             InlineKeyboardButton(text='USD', callback_data="btn:Cur:USD"),
-            InlineKeyboardButton(text='SOTA', callback_data="btn:Cur:SOTA"),
             InlineKeyboardButton(text='Другой', callback_data="btn:Cur:New")            
         ]
     ]

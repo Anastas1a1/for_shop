@@ -1,7 +1,5 @@
-import os
-from dotenv import load_dotenv
-from aiogram import types, executor, Dispatcher, Bot
 from aiogram.dispatcher.filters.state import State, StatesGroup
+from aiogram import types, executor, Dispatcher, Bot
 from aiogram.types.message import ContentType, ContentTypes
 import logging
 
@@ -11,9 +9,12 @@ from aiogram.dispatcher import FSMContext
 from aiogram.dispatcher.filters import Text
 from aiogram.dispatcher.filters.state import State, StatesGroup
 from aiogram.types import ParseMode, CallbackQuery
-from callback_datas import NamesCallback
+from callback_datas import NamesCallback, ProdsCallback
 #from aiogram.utils import executor
+from dotenv import load_dotenv
+from datetime import datetime
 
+import os
 import markup as nav
 import tables
 import tbls
@@ -31,16 +32,24 @@ logging.basicConfig(format=u'%(filename)s [LINE:%(lineno)d] #%(levelname)-8s [%(
 
 
 class Form(StatesGroup):
+    date = State()
+    title = State()
+    cnt_prod = State()
     name = State() 
     sum = State() 
     cur = State() 
     rate = State()
-    note = State()
-    rate_CB = State()
+    # rate_CB = State()
+    commission = State()
+    
+    
+    title1 = State()
+    sum_pur = State()
+    cnt_pur = State()
 
 @dp.message_handler(commands=['start'])
 async def command_start(message: types.Message):
-    await bot.send_message(message.from_user.id, 'Привет, {0.first_name}! Этот бот поможет отслеживать финансовые операции, а так же составлять сводку по операциям за месяц.\n  Начнем?'.format(message.from_user), reply_markup = nav.MainMenu)
+    await bot.send_message(message.from_user.id, 'Привет, {0.first_name}! Этот бот поможет отслеживать финансовые операции, а так же составлять сводку по операциям за месяц.\nНачнем?'.format(message.from_user), reply_markup = nav.MainMenu)
 
 @dp.message_handler(commands=['new'])
 async def command_start(message: types.Message):
@@ -70,23 +79,249 @@ async def cancel_inline(call: CallbackQuery, state: FSMContext):
     await state.finish()
     await bot.send_message(call.message.chat.id, 'Операция прервана', reply_markup=nav.MainMenu)            
 
-#______________________________________________________________________Name
 
-@dp.callback_query_handler(text_contains="btn:MainMenu:") 
-async def main_menu(call: CallbackQuery):
+#______________________________________________________________________Title_table
+
+#______________________________________________________________________Title
+
+@dp.callback_query_handler(text_contains="btn:MainMenu:AddProduct") 
+async def main_menu_prod(call: CallbackQuery):
     await bot.edit_message_reply_markup(
         chat_id=call.from_user.id,
         message_id=call.message.message_id, 
         reply_markup=None
     )
 
-    if call.data == "btn:MainMenu:AddTransaction":
-        await call.message.answer(f"Ввод нового имени или выбор из имеющихся?", reply_markup = nav.NameMenu)
+    if call.data == "btn:MainMenu:AddProduct":
+        await call.message.answer(f"Ввод нового названия товара или добавление имеющегося?", reply_markup = nav.ProdMenu)
+        
+
+
+@dp.callback_query_handler(text_contains="btn:ProdMenu:") 
+async def prod_menu(call: CallbackQuery):
+    await bot.edit_message_reply_markup(
+        chat_id=call.from_user.id,
+        message_id=call.message.message_id, 
+        reply_markup=None
+    )
+    if call.data == "btn:ProdMenu:Choice":
+        title_list = tables.get_prod(call.message.chat.id)
+        if title_list == 0:
+            await call.message.answer("Список товаров не найден. Введите новое название или /cancel, чтобы отменить операцию")
+            await Form.title1.set()
+        else:
+            await call.message.answer("Выберете товар", reply_markup = nav.title1_markup(title_list))  
+            
+    if call.data == "btn:ProdMenu:Add":
+        await bot.send_message(call.message.chat.id, 'Введите новое название')
+        await Form.title1.set()
+
+
+        
+@dp.callback_query_handler(ProdsCallback.filter(space = "ChoiceTitle")) 
+async def include_prod(call: CallbackQuery, callback_data: dict, state: FSMContext):
+    await bot.edit_message_reply_markup(
+        chat_id=call.from_user.id,
+        message_id=call.message.message_id, 
+        reply_markup=None
+    )
+    get_title = callback_data.get("title")   
+    logging.info(f"call = {callback_data}")
+    async with state.proxy() as data:
+        data['title1'] = get_title
+    await call.message.answer("Введите закупочную стоимость")
+    await Form.sum_pur.set()
+
+ 
+@dp.message_handler(state=Form.title1)
+async def include_new_prod(message: types.Message, state: FSMContext):
+    async with state.proxy() as data:
+        data['title1'] = message.text
+
+    await Form.next()
+    await message.reply("Введите закупочную стоимость")
+
+#______________________________________________________________________Summa_pur
+ 
+@dp.message_handler(lambda message: not message.text.isdigit(), state=Form.sum_pur)
+async def invalid_sum_pur(message: types.Message):
+    return await message.reply("Введите стоимость продукта в виде числа или /cancel, чтобы отменить операцию")
+
+
+@dp.message_handler(lambda message: message.text.isdigit(), state=Form.sum_pur)
+async def include_sum_pur(message: types.Message, state: FSMContext):
+    await Form.next()
+    await state.update_data(sum_pur=int(message.text))
+    
+    await bot.send_message(message.from_user.id, 'Введите количество закупленного продукта в виде числа')    
+
+#______________________________________________________________________cnt_pur_end_add
+
+@dp.message_handler(lambda message: not message.text.isdigit(), state=Form.cnt_pur)
+async def invalid_cnt_pur(message: types.Message, state: FSMContext):
+    await bot.send_message(message.from_user.id, 'Введите количество закупленного продукта в виде числа или /cancel, чтобы отменить операцию')  
+
+@dp.message_handler(lambda message: message.text.isdigit(), state=Form.cnt_pur)
+async def include_cnt_pur(message: types.Message, state: FSMContext):
+    # await Form.next()
+    await state.update_data(cnt_pur=int(message.text))
+    
+    async with state.proxy() as data:
+        tit = data['title1']
+        purchase = [
+            data['title1'],
+            data['sum_pur'],
+            data['cnt_pur']
+        ]
+    tables.new_purchase(message.chat.id, purchase)
+    await state.finish()  
+    await bot.send_message(message.chat.id, 'Товар "{}" добавлен'.format(tit), reply_markup=nav.MainMenu)
+
+#______________________________________________________________________Add_Transaction
+
+@dp.callback_query_handler(text_contains="btn:MainMenu:AddTransaction") 
+async def main_menu_trans(call: CallbackQuery):
+    await bot.edit_message_reply_markup(
+        chat_id=call.from_user.id,
+        message_id=call.message.message_id, 
+        reply_markup=None
+    )
+    title_list = tables.get_prod(call.message.chat.id)
+
+    if title_list == 0:
+        await call.message.answer("Список товаров не найден. Сначала добавьте закупленный товар. Нажмите /cancel, чтобы отменить операцию")
+ 
+    else:
+        await call.message.answer("Выберете товар", reply_markup = nav.title_markup(title_list))  
+   
+
+@dp.callback_query_handler(ProdsCallback.filter(space = "ChoiceTitle_2")) 
+async def include_prod(call: CallbackQuery, callback_data: dict, state: FSMContext):
+    await bot.edit_message_reply_markup(
+        chat_id=call.from_user.id,
+        message_id=call.message.message_id, 
+        reply_markup=None
+    )
+    get_title = callback_data.get("title")   
+    logging.info(f"call = {callback_data}")
+    async with state.proxy() as data:
+        data['title'] = get_title
+    # await call.message.answer("Введите стоимость продажи")
+    # await Form.sum.set()
+    await call.message.answer(f"Ввод нового имени продавца или выбор из имеющихся?", reply_markup = nav.NameMenu)
+
+ 
+
+# @dp.callback_query_handler(text_contains="btn:MainMenu:AddTransaction") 
+# async def main_menu_trans(call: CallbackQuery):
+#     await bot.edit_message_reply_markup(
+#         chat_id=call.from_user.id,
+#         message_id=call.message.message_id, 
+#         reply_markup=None
+#     )
+
+#     if call.data == "btn:MainMenu:AddTransaction":
+#         await call.message.answer(f"Ввод нового названия товара или добавление имеющегося?", reply_markup = nav.ProdMenu)
+        
+
+
+# @dp.callback_query_handler(text_contains="btn:ProdMenu:") 
+# async def prod_menu(call: CallbackQuery):
+#     await bot.edit_message_reply_markup(
+#         chat_id=call.from_user.id,
+#         message_id=call.message.message_id, 
+#         reply_markup=None
+#     )
+#     if call.data == "btn:ProdMenu:Choice":
+#         title_list = tables.get_prod(call.message.chat.id)
+#         if title_list == 0:
+#             await call.message.answer("Список товаров не найден. Введите новое название или /cancel, чтобы отменить операцию")
+#             await Form.title1.set()
+#         else:
+#             await call.message.answer("Выберете товар", reply_markup = nav.title_markup(title_list))  
+            
+#     if call.data == "btn:ProdMenu:Add":
+#         await bot.send_message(call.message.chat.id, 'Введите новое название')
+#         await Form.title1.set()
+
+
+        
+# @dp.callback_query_handler(ProdsCallback.filter(space = "ChoiceTitle")) 
+# async def include_prod(call: CallbackQuery, callback_data: dict, state: FSMContext):
+#     await bot.edit_message_reply_markup(
+#         chat_id=call.from_user.id,
+#         message_id=call.message.message_id, 
+#         reply_markup=None
+#     )
+#     get_name = callback_data.get("title")   
+#     logging.info(f"call = {callback_data}")
+#     async with state.proxy() as data:
+#         data['title1'] = get_name
+#     await call.message.answer("Введите закупочную стоимость")
+#     await Form.sum_pur.set()
+
+ 
+# @dp.message_handler(state=Form.title1)
+# async def include_new_prod(message: types.Message, state: FSMContext):
+#     async with state.proxy() as data:
+#         data['title1'] = message.text
+
+#     await Form.next()
+#     await message.reply("Введите закупочную стоимость")
+
+# #______________________________________________________________________Summa_pur
+ 
+# @dp.message_handler(lambda message: not message.text.isdigit(), state=Form.sum_pur)
+# async def invalid_sum_pur(message: types.Message):
+#     return await message.reply("Введите стоимость продукта в виде числа или /cancel, чтобы отменить операцию")
+
+
+# @dp.message_handler(lambda message: message.text.isdigit(), state=Form.sum_pur)
+# async def include_sum_pur(message: types.Message, state: FSMContext):
+#     await Form.next()
+#     await state.update_data(sum=int(message.text))
+    
+#     await bot.send_message(message.from_user.id, 'Введите количество закупленного продукта в виде числа')    
+
+# #______________________________________________________________________cnt_pur_end_add
+
+# @dp.message_handler(lambda message: not message.text.isdigit(), state=Form.cnt_pur)
+# async def invalid_cnt_pur(message: types.Message, state: FSMContext):
+#     await bot.send_message(message.from_user.id, 'Введите количество закупленного продукта в виде числа или /cancel, чтобы отменить операцию')  
+
+# @dp.message_handler(lambda message: message.text.isdigit(), state=Form.cnt_pur)
+# async def include_cnt_pur(message: types.Message, state: FSMContext):
+#     await Form.next()
+#     await state.update_data(cnt_pur=int(message.text))
+    
+#     async with state.proxy() as data:
+#         purchase = [
+#             data['title1'],
+#             data['sum_pur'],
+#             data['cnt_pur']
+
+#         ]
+#     tables.new_purchase(message.chat.id, purchase)
+#     await bot.send_message(message.from_user.id, 'Закупка добавлена', nav.MainMenu)
+
+
+#______________________________________________________________________Name
+
+# @dp.callback_query_handler(text_contains="btn:MainMenu:") 
+# async def main_menu(call: CallbackQuery):
+#     await bot.edit_message_reply_markup(
+#         chat_id=call.from_user.id,
+#         message_id=call.message.message_id, 
+#         reply_markup=None
+#     )
+
+#     if call.data == "btn:MainMenu:AddTransaction":
+#         await call.message.answer(f"Ввод нового имени или выбор из имеющихся?", reply_markup = nav.NameMenu)
         
 
 
 @dp.callback_query_handler(text_contains="btn:NameMenu:") 
-async def main_menu(call: CallbackQuery):
+async def name_menu(call: CallbackQuery):
     await bot.edit_message_reply_markup(
         chat_id=call.from_user.id,
         message_id=call.message.message_id, 
@@ -163,7 +398,7 @@ async def choice_cur(call: CallbackQuery, state: FSMContext):
             if data['cur'] == 'RUB':
                 data['rate'] = 1
                 await Form.next()
-                await call.message.answer("Требуется добавить комментарий?", reply_markup=nav.NoteMenu)
+                await call.message.answer("Введите процент комиссионных")
             else:
                 await bot.send_message(call.message.chat.id, 'Требуется добавить курс валюты?', reply_markup=nav.makeRateMenu(False))
             
@@ -176,7 +411,7 @@ async def other_cur(message: types.Message, state: FSMContext):
             data['rate'] = 1
             await Form.next()
             await Form.next()
-            await message.answer("Требуется добавить комментарий?", reply_markup=nav.NoteMenu)
+            await message.answer("Введите процент комиссионных",)
         else:
             await Form.next()
             await bot.send_message(message.chat.id, 'Требуется добавить курс валюты?', reply_markup=nav.makeRateMenu(False))
@@ -209,13 +444,13 @@ async def choice_cur(call: CallbackQuery, state: FSMContext):
         async with state.proxy() as data:
             data['rate'] = 0
             await Form.next()
-            await call.message.answer("Требуется добавить комментарий?", reply_markup=nav.NoteMenu)
+            await call.message.answer("Введите процент комиссионных")
             
     elif call.data =="btn:Rate:Auto:Yes":
         async with state.proxy() as data:
             data['rate'] = data['rate_CB']
             await Form.next()
-            await call.message.answer("Добавлен курс RUB - {}: {} \nТребуется добавить комментарий?".format(data['cur'], data['rate']), reply_markup=nav.NoteMenu)  
+            await call.message.answer("Добавлен курс RUB - {}: {} \nВведите процент комиссионных".format(data['cur'], data['rate']))  
            
 
 @dp.message_handler(lambda message: isinstance(message.text, float | int) , state=Form.rate)
@@ -228,97 +463,152 @@ async def include_sum(message: types.Message, state: FSMContext):
     await state.update_data(rate=float(message.text))
     await Form.next()
     async with state.proxy() as data:
-        await bot.send_message(message.chat.id, "Добавлен курс RUB - {}: {} \nТребуется добавить комментарий?".format(data['cur'], data['rate']), reply_markup=nav.NoteMenu) 
+        await bot.send_message(message.chat.id, "Добавлен курс RUB - {}: {} \nВведите процент комиссионных".format(data['cur'], data['rate'])) 
            
 
-#______________________________________________________________________Note
+#______________________________________________________________________commission
+@dp.message_handler(lambda message: not message.text.isdigit(), state=Form.commission)
+async def invalid_com(message: types.Message):
+    return await message.reply("Введите процент комиссионных в виде числа или /cancel, чтобы отменить операцию")
 
-@dp.callback_query_handler(text_contains="btn:Note", state=Form.note) 
-async def choice_cur(call: CallbackQuery, state: FSMContext):
-    await bot.edit_message_reply_markup(
-        chat_id=call.from_user.id,
-        message_id=call.message.message_id, 
-        reply_markup=None
-    )
-    if call.data == "btn:Note:Yes":
-        await call.message.answer("Введите комментарий")
-        await Form.note.set()
-    else:
-        async with state.proxy() as data:
-            data['note'] = ' ' 
+
+@dp.message_handler(lambda message: message.text.isdigit(), state=Form.commission)
+async def include_com(message: types.Message, state: FSMContext):
+    # await Form.next()
+    # await state.update_data(commission=int(message.text))
+
+    async with state.proxy() as data:
+        data['date'] = datetime.now().date()
+        data['commission'] = int(message.text) / 100 *data['sum']
     try:
         fee_total = round(data['sum']*data['rate'],2)
     except:
         fee_total = 0
+        
     transaction = [
+        data['date'],
         data['name'],
         data['sum'],
         data['cur'],
         data['rate'],
         fee_total,
-        data['note']
+        data['commission']
     ]
-    tables.new_transaction(call.message.chat.id, transaction)
-    
-    print(transaction)
-    await bot.send_message(
-        call.message.chat.id,
-        md.text(
-            md.text('Добавлена операция:'),
-            md.text('     Name: ', md.bold(data['name'])),
-            md.text('     Sum: ', md.bold(data['sum'])),
-            md.text('     Currency: ', md.bold(data['cur'])),
-            md.text('     Currency Rate: ', md.bold(data['rate'])),
-            sep='\n',
-        ),
-        reply_markup=nav.MainMenu,
-        parse_mode=ParseMode.MARKDOWN,
-    )
-    path = 'database/' + str(call.message.chat.id) + '.xlsx' 
-    await bot.send_document(call.message.chat.id, open(path, 'rb'))
-    await state.finish()
-
- 
-
-@dp.message_handler(state=Form.note)
-async def other_cur(message: types.Message, state: FSMContext):
-    async with state.proxy() as data:
-        data['note'] = message.text
-    # await include_name(message, FSMContext) 
-        try:
-            fee_total = round(data['sum']*data['rate'],2)
-        except:
-            fee_total = 0
-            data['rate'] = 0
-    transaction = [
-        data['name'],
-        data['sum'],
-        data['cur'],
-        data['rate'],
-        fee_total,
-        data['note']
-    ]
+    logging.info(transaction)
     tables.new_transaction(message.chat.id, transaction)
     
-    print(transaction)
     await bot.send_message(
         message.chat.id,
         md.text(
             md.text('Добавлена операция:'),
-            md.text('     Name: ', md.bold(data['name'])),
-            md.text('     Sum: ', md.bold(data['sum'])),
-            md.text('     Currency: ', md.bold(data['cur'])),
-            md.text('     Currency Rate: ', md.bold(data['rate'])),
-            md.text('     Note: ', md.bold(data['note'])),
+            md.text('     Имя продавца: ', md.bold(data['name'])),
+            md.text('     Стоимость продажи: ', md.bold(data['sum'])),
+            md.text('     Валюта: ', md.bold(data['cur'])),
+            md.text('     Курс валюты: ', md.bold(data['rate'])),
+            md.text('     Дата:', md.text(data['date'])),
+            md.text('     Процент комиссионных:', md.text(data['commission'])),
             sep='\n',
         ),
         reply_markup=nav.MainMenu,
         parse_mode=ParseMode.MARKDOWN,
     )
-    path = 'database/' + str(message.chat.id) + '.xlsx' 
-    mes_doc = await bot.send_document(message.chat.id, open(path, 'rb'))
-    # await bot.pin_chat_message(chat_id = message.chat.id, message_id=mes_doc)
-    await state.finish()
+    await state.finish()    
+
+
+#______________________________________________________________________Note
+
+# @dp.callback_query_handler(text_contains="btn:Note", state=Form.note) 
+# async def choice_cur(call: CallbackQuery, state: FSMContext):
+#     await bot.edit_message_reply_markup(
+#         chat_id=call.from_user.id,
+#         message_id=call.message.message_id, 
+#         reply_markup=None
+#     )
+#     if call.data == "btn:Note:Yes":
+#         await call.message.answer("Введите комментарий")
+#         await Form.note.set()
+#     else:
+#         async with state.proxy() as data:
+#             data['note'] = ' ' 
+#             data['date'] = datetime.now().date()
+#     try:
+#         fee_total = round(data['sum']*data['rate'],2)
+#     except:
+#         fee_total = 0
+#     transaction = [
+#         data['date'],
+#         data['name'],
+#         data['sum'],
+#         data['cur'],
+#         data['rate'],
+#         fee_total,
+#         data['note']
+#     ]
+#     tables.new_transaction(call.message.chat.id, transaction)
+    
+#     print(transaction)
+#     await bot.send_message(
+#         call.message.chat.id,
+#         md.text(
+#             md.text('Добавлена операция:'),
+#             md.text('     Name: ', md.bold(data['name'])),
+#             md.text('     Sum: ', md.bold(data['sum'])),
+#             md.text('     Currency: ', md.bold(data['cur'])),
+#             md.text('     Currency Rate: ', md.bold(data['rate'])),
+#             md.text('     Date:', md.bold(data['date'])),
+#             sep='\n',
+#         ),
+#         reply_markup=nav.MainMenu,
+#         parse_mode=ParseMode.MARKDOWN,
+#     )
+#     path = 'database/' + str(call.message.chat.id) + '.xlsx' 
+#     await bot.send_document(call.message.chat.id, open(path, 'rb'))
+#     await state.finish()
+
+ 
+
+# @dp.message_handler(state=Form.note)
+# async def other_cur(message: types.Message, state: FSMContext):
+#     async with state.proxy() as data:
+#         data['date'] = datetime.now().date()
+#         data['note'] = message.text
+#     # await include_name(message, FSMContext) 
+#         try:
+#             fee_total = round(data['sum']*data['rate'],2)
+#         except:
+#             fee_total = 0
+#             data['rate'] = 0
+#     transaction = [
+#         data['date'],
+#         data['name'],
+#         data['sum'],
+#         data['cur'],
+#         data['rate'],
+#         fee_total,
+#         data['note']
+#     ]
+#     tables.new_transaction(message.chat.id, transaction)
+    
+#     print(transaction)
+#     await bot.send_message(
+#         message.chat.id,
+#         md.text(
+#             md.text('Добавлена операция:'),
+#             md.text('     Name: ', md.bold(data['name'])),
+#             md.text('     Sum: ', md.bold(data['sum'])),
+#             md.text('     Currency: ', md.bold(data['cur'])),
+#             md.text('     Currency Rate: ', md.bold(data['rate'])),
+#             md.text('     Note: ', md.bold(data['note'])),
+#             md.text('     Date:', md.bold(data['date'])),
+#             sep='\n',
+#         ),
+#         reply_markup=nav.MainMenu,
+#         parse_mode=ParseMode.MARKDOWN,
+#     )
+#     path = 'database/' + str(message.chat.id) + '.xlsx' 
+#     mes_doc = await bot.send_document(message.chat.id, open(path, 'rb'))
+#     # await bot.pin_chat_message(chat_id = message.chat.id, message_id=mes_doc)
+#     await state.finish()
         
 
 
